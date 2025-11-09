@@ -1,7 +1,5 @@
 import {PublicKey, Signature, verify} from "@chainsafe/blst";
-import {BLSPubkey, Bytes32, UintNum64, phase0, ssz} from "@lodestar/types";
-import {verifyMerkleBranch} from "@lodestar/utils";
-
+import {BeaconConfig} from "@lodestar/config";
 import {
   DEPOSIT_CONTRACT_TREE_DEPTH,
   DOMAIN_DEPOSIT,
@@ -11,10 +9,8 @@ import {
   GENESIS_SLOT,
   MAX_EFFECTIVE_BALANCE,
 } from "@lodestar/params";
-
-import {BeaconConfig} from "@lodestar/config";
-import {DepositRequest} from "@lodestar/types/lib/electra/types.js";
-import {DepositData} from "@lodestar/types/lib/phase0/types.js";
+import {BLSPubkey, Bytes32, UintNum64, electra, phase0, ssz} from "@lodestar/types";
+import {verifyMerkleBranch} from "@lodestar/utils";
 import {ZERO_HASH} from "../constants/index.js";
 import {CachedBeaconStateAllForks, CachedBeaconStateAltair, CachedBeaconStateElectra} from "../types.js";
 import {computeDomain, computeSigningRoot, getMaxEffectiveBalance, increaseBalance} from "../util/index.js";
@@ -53,7 +49,7 @@ export function processDeposit(fork: ForkSeq, state: CachedBeaconStateAllForks, 
 export function applyDeposit(
   fork: ForkSeq,
   state: CachedBeaconStateAllForks,
-  deposit: DepositData | DepositRequest
+  deposit: phase0.DepositData | electra.DepositRequest
 ): void {
   const {config, epochCtx, validators} = state;
   const {pubkey, withdrawalCredentials, amount, signature} = deposit;

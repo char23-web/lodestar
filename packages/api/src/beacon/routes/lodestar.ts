@@ -1,22 +1,26 @@
-import {ContainerType, ValueOf} from "@chainsafe/ssz";
+import {ContainerType, Type, ValueOf} from "@chainsafe/ssz";
 import {ChainForkConfig} from "@lodestar/config";
-import {Epoch, RootHex, Slot, ssz} from "@lodestar/types";
+import {BeaconState, Epoch, RootHex, Slot, ssz} from "@lodestar/types";
 import {
   ArrayOf,
   EmptyArgs,
   EmptyMeta,
-  EmptyMetaCodec,
   EmptyRequest,
   EmptyRequestCodec,
   EmptyResponseCodec,
   EmptyResponseData,
   JsonOnlyResponseCodec,
+  WithVersion,
 } from "../../utils/codecs.js";
 import {Endpoint, RouteDefinitions, Schema} from "../../utils/index.js";
+import {
+  ExecutionOptimisticFinalizedAndVersionCodec,
+  ExecutionOptimisticFinalizedAndVersionMeta,
+  VersionCodec,
+  VersionMeta,
+} from "../../utils/metadata.js";
 import {StateArgs} from "./beacon/state.js";
 import {FilterGetPeers, NodePeer, PeerDirection, PeerState} from "./node.js";
-
-// See /packages/api/src/routes/index.ts for reasoning and instructions to add new routes
 
 export type SyncChainDebugState = {
   targetRoot: string | null;
@@ -25,7 +29,7 @@ export type SyncChainDebugState = {
   status: string;
   startEpoch: number;
   peers: number;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: We need to use `any` type here
   batches: any[];
 };
 
@@ -75,12 +79,21 @@ export type StateCacheItem = {
 
 export type LodestarNodePeer = NodePeer & {
   agentVersion: string;
+  status: unknown | null;
+  metadata: unknown | null;
+  agentClient: string;
+  lastReceivedMsgUnixTsMs: number;
+  lastStatusUnixTsMs: number;
+  connectedUnixTsMs: number;
 };
+
+export type BlacklistedBlock = {root: RootHex; slot: Slot | null};
 
 export type LodestarThreadType = "main" | "network" | "discv5";
 
 const HistoricalSummariesResponseType = new ContainerType(
   {
+    slot: ssz.Slot,
     historicalSummaries: ssz.capella.HistoricalSummaries,
     proof: ArrayOf(ssz.Bytes8),
   },
@@ -107,7 +120,7 @@ export type Endpoints = {
       dirpath?: string;
     },
     {query: {thread?: LodestarThreadType; duration?: number; dirpath?: string}},
-    {filepath: string},
+    {result: string},
     EmptyMeta
   >;
   /** TODO: description */
@@ -228,6 +241,16 @@ export type Endpoints = {
     {count: number}
   >;
 
+  /** Returns root/slot of blacklisted blocks */
+  getBlacklistedBlocks: Endpoint<
+    // ⏎
+    "GET",
+    EmptyArgs,
+    EmptyRequest,
+    BlacklistedBlock[],
+    EmptyMeta
+  >;
+
   /** Returns historical summaries and proof for a given state ID */
   getHistoricalSummaries: Endpoint<
     // ⏎
@@ -235,7 +258,18 @@ export type Endpoints = {
     StateArgs,
     {params: {state_id: string}},
     HistoricalSummariesResponse,
-    EmptyMeta
+    ExecutionOptimisticFinalizedAndVersionMeta
+  >;
+
+  getPersistedCheckpointState: Endpoint<
+    "GET",
+    {
+      /** The checkpoint in `<root>:<epoch>` format to be returned instead of the latest safe checkpoint state */
+      checkpointId?: string;
+    },
+    {query: {checkpoint_id?: string}},
+    BeaconState,
+    VersionMeta
   >;
 
   /** Dump Discv5 Kad values */
@@ -389,8 +423,14 @@ export function getDefinitions(_config: ChainForkConfig): RouteDefinitions<Endpo
       },
       resp: JsonOnlyResponseCodec,
     },
+    getBlacklistedBlocks: {
+      url: "/eth/v1/lodestar/blacklisted_blocks",
+      method: "GET",
+      req: EmptyRequestCodec,
+      resp: JsonOnlyResponseCodec,
+    },
     getHistoricalSummaries: {
-      url: "/eth/v1/lodestar/historical_summaries/{state_id}",
+      url: "/eth/v1/lodestar/states/{state_id}/historical_summaries",
       method: "GET",
       req: {
         writeReq: ({stateId}) => ({params: {state_id: stateId.toString()}}),
@@ -401,7 +441,26 @@ export function getDefinitions(_config: ChainForkConfig): RouteDefinitions<Endpo
       },
       resp: {
         data: HistoricalSummariesResponseType,
-        meta: EmptyMetaCodec,
+        meta: ExecutionOptimisticFinalizedAndVersionCodec,
+      },
+    },
+    getPersistedCheckpointState: {
+      url: "/eth/v1/lodestar/persisted_checkpoint_state",
+      method: "GET",
+      req: {
+        writeReq: ({checkpointId}) => ({query: {checkpoint_id: checkpointId}}),
+        parseReq: ({query}) => ({checkpointId: query.checkpoint_id}),
+        schema: {
+          query: {checkpoint_id: Schema.String},
+        },
+      },
+      resp: {
+        data: WithVersion((fork) => ssz[fork].BeaconState as Type<BeaconState>),
+        meta: VersionCodec,
+      },
+      init: {
+        // Default timeout is not sufficient to download state
+        timeoutMs: 5 * 60 * 1000,
       },
     },
     discv5GetKadValues: {

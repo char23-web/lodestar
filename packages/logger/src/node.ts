@@ -1,8 +1,7 @@
 import path from "node:path";
-// We want to keep `winston` export as it's more readable and easier to understand
-/* eslint-disable import/no-named-as-default-member */
-import winston from "winston";
 import type {Logger as Winston} from "winston";
+// We want to keep `winston` export as it's more readable and easier to understand
+import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
 import TransportStream from "winston-transport";
 import {LogLevel, Logger, TimestampFormat} from "./interface.js";
@@ -45,7 +44,7 @@ export type LoggerNodeOpts = {
    * timestampFormat = {
    *   format: TimestampFormatCode.EpochSlot,
    *   genesisTime: args.logFormatGenesisTime,
-   *   secondsPerSlot: config.SECONDS_PER_SLOT,
+   *   secondsPerSlot: config.SLOT_DURATION_MS / 1000,
    *   slotsPerEpoch: SLOTS_PER_EPOCH,
    * }
    * ```

@@ -1,10 +1,15 @@
 import path from "node:path";
-import {Discv5} from "@chainsafe/discv5";
-import {ENR} from "@chainsafe/enr";
-import {HttpMetricsServer, RegistryMetricCreator, getHttpMetricsServer} from "@lodestar/beacon-node";
-import {ErrorAborted} from "@lodestar/utils";
+import {PrivateKey} from "@libp2p/interface";
 import {Multiaddr, multiaddr} from "@multiformats/multiaddr";
-
+import {Discv5, Discv5EventEmitter} from "@chainsafe/discv5";
+import {ENR, ENRData, SignableENR} from "@chainsafe/enr";
+import {
+  HttpMetricsServer,
+  IBeaconNodeOptions,
+  RegistryMetricCreator,
+  getHttpMetricsServer,
+} from "@lodestar/beacon-node";
+import {ErrorAborted, Logger} from "@lodestar/utils";
 import {getBeaconConfigFromArgs} from "../../config/index.js";
 import {getNetworkBootnodes, isKnownNetworkName, readBootnodes} from "../../networks/index.js";
 import {parseArgs as parseMetricsArgs} from "../../options/beaconNodeOptions/metrics.js";
@@ -13,7 +18,7 @@ import {GlobalArgs} from "../../options/index.js";
 import {mkdir, onGracefulShutdown, writeFile600Perm} from "../../util/index.js";
 import {getVersionData} from "../../util/version.js";
 import {initLogger} from "../beacon/handler.js";
-import {initPeerIdAndEnr} from "../beacon/initPeerIdAndEnr.js";
+import {initPrivateKeyAndEnr} from "../beacon/initPeerIdAndEnr.js";
 import {BeaconArgs} from "../beacon/options.js";
 import {getBeaconPaths} from "../beacon/paths.js";
 import {BootnodeArgs} from "./options.js";
@@ -22,7 +27,7 @@ import {BootnodeArgs} from "./options.js";
  * Runs a bootnode.
  */
 export async function bootnodeHandler(args: BootnodeArgs & GlobalArgs): Promise<void> {
-  const {discv5Args, metricsArgs, bootnodeDir, network, version, commit, peerId, enr, logger} =
+  const {discv5Args, metricsArgs, bootnodeDir, network, version, commit, privateKey, enr, logger} =
     await bootnodeHandlerInit(args);
 
   const abortController = new AbortController();
@@ -34,7 +39,7 @@ export async function bootnodeHandler(args: BootnodeArgs & GlobalArgs): Promise<
     ip4: enr.getLocationMultiaddr("udp4")?.toString(),
     ip6: enr.getLocationMultiaddr("udp6")?.toString(),
   });
-  logger.info("Identity", {peerId: peerId.toString(), nodeId: enr.nodeId});
+  logger.info("Identity", {peerId: enr.peerId.toString(), nodeId: enr.nodeId});
   logger.info("ENR", {enr: enr.encodeTxt()});
 
   // bootnode setup
@@ -53,14 +58,14 @@ export async function bootnodeHandler(args: BootnodeArgs & GlobalArgs): Promise<
 
     const discv5 = Discv5.create({
       enr,
-      peerId,
+      privateKey,
       bindAddrs: {
         ip4: (bindAddrs.ip4 ? multiaddr(bindAddrs.ip4) : undefined) as Multiaddr,
         ip6: bindAddrs.ip6 ? multiaddr(bindAddrs.ip6) : undefined,
       },
       config: {enrUpdate: !enr.ip && !enr.ip6},
       metricsRegistry,
-    });
+    }) as Discv5 & Discv5EventEmitter;
 
     // If there are any bootnodes, add them to the routing table
     for (const bootEnrStr of Array.from(new Set(discv5Args.bootEnrs).values())) {
@@ -68,7 +73,7 @@ export async function bootnodeHandler(args: BootnodeArgs & GlobalArgs): Promise<
       logger.info("Adding bootnode", {
         ip4: bootEnr.getLocationMultiaddr("udp4")?.toString(),
         ip6: bootEnr.getLocationMultiaddr("udp6")?.toString(),
-        peerId: (await bootEnr.peerId()).toString(),
+        peerId: bootEnr.peerId.toString(),
         nodeId: enr.nodeId,
       });
       discv5.addEnr(bootEnr);
@@ -82,7 +87,7 @@ export async function bootnodeHandler(args: BootnodeArgs & GlobalArgs): Promise<
       void discv5.findRandomNode();
     }
 
-    discv5.on("multiaddrUpdated", (addr) => {
+    discv5.on("multiaddrUpdated", (addr: ENRData) => {
       logger.info("Advertised socket address updated", {addr: addr.toString()});
     });
 
@@ -155,8 +160,20 @@ export async function bootnodeHandler(args: BootnodeArgs & GlobalArgs): Promise<
   }
 }
 
+export type BootNodeInitOptions = {
+  discv5Args: Exclude<IBeaconNodeOptions["network"]["discv5"], null>;
+  metricsArgs: IBeaconNodeOptions["metrics"];
+  bootnodeDir: string;
+  network: string;
+  version: string;
+  commit: string;
+  privateKey: PrivateKey;
+  enr: SignableENR;
+  logger: Logger;
+};
+
 /** Separate function to simplify unit testing of options merging */
-export async function bootnodeHandlerInit(args: BootnodeArgs & GlobalArgs) {
+export async function bootnodeHandlerInit(args: BootnodeArgs & GlobalArgs): Promise<BootNodeInitOptions> {
   const {config, network} = getBeaconConfigFromArgs(args);
   const {version, commit} = getVersionData();
   const beaconPaths = getBeaconPaths(args, network);
@@ -180,7 +197,7 @@ export async function bootnodeHandlerInit(args: BootnodeArgs & GlobalArgs) {
   );
 
   const logger = initLogger(args, beaconPaths.dataDir, config, "bootnode.log");
-  const {peerId, enr} = await initPeerIdAndEnr(args as unknown as BeaconArgs, bootnodeDir, logger, true);
+  const {privateKey, enr} = await initPrivateKeyAndEnr(args as unknown as BeaconArgs, bootnodeDir, logger, true);
 
-  return {discv5Args, metricsArgs, bootnodeDir, network, version, commit, peerId, enr, logger};
+  return {discv5Args, metricsArgs, bootnodeDir, network, version, commit, privateKey, enr, logger};
 }

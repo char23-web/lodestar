@@ -2,14 +2,16 @@ import {routes} from "@lodestar/api";
 import {ForkSeq} from "@lodestar/params";
 import {computeStartSlotAtEpoch} from "@lodestar/state-transition";
 import {RootHex, Slot, SlotRootHex} from "@lodestar/types";
-import {Logger, MapDef, mapValues, sleep} from "@lodestar/utils";
-import {pruneSetToMax} from "@lodestar/utils";
+import {Logger, MapDef, mapValues, pruneSetToMax, sleep} from "@lodestar/utils";
+import {BlockInputSource} from "../../chain/blocks/blockInput/types.js";
+import {ChainEvent} from "../../chain/emitter.js";
 import {GossipErrorCode} from "../../chain/errors/gossipValidation.js";
 import {IBeaconChain} from "../../chain/interface.js";
 import {IBeaconDb} from "../../db/interface.js";
 import {Metrics} from "../../metrics/metrics.js";
 import {ClockEvent} from "../../util/clock.js";
 import {callInNextEventLoop} from "../../util/eventLoop.js";
+import {PeerIdStr} from "../../util/peerId.js";
 import {NetworkEvent, NetworkEventBus} from "../events.js";
 import {
   GossipHandlers,
@@ -18,7 +20,6 @@ import {
   GossipValidatorBatchFn,
   GossipValidatorFn,
 } from "../gossip/interface.js";
-import {PeerIdStr} from "../peers/index.js";
 import {createExtractBlockSlotRootFns} from "./extractSlotRootFns.js";
 import {GossipHandlerOpts, ValidatorFnsModules, getGossipHandlers} from "./gossipHandlers.js";
 import {createGossipQueues} from "./gossipQueues/index.js";
@@ -66,6 +67,7 @@ type WorkOpts = {
 const executeGossipWorkOrderObj: Record<GossipType, WorkOpts> = {
   [GossipType.beacon_block]: {bypassQueue: true},
   [GossipType.blob_sidecar]: {bypassQueue: true},
+  [GossipType.data_column_sidecar]: {bypassQueue: true},
   [GossipType.beacon_aggregate_and_proof]: {},
   [GossipType.voluntary_exit]: {},
   [GossipType.bls_to_execution_change]: {},
@@ -112,10 +114,6 @@ export enum ReprocessRejectReason {
  */
 export enum CannotAcceptWorkReason {
   /**
-   * Validating or processing gossip block at current slot.
-   */
-  processingCurrentSlotBlock = "processing_current_slot_block",
-  /**
    * bls is busy.
    */
   bls = "bls_busy",
@@ -159,7 +157,6 @@ export class NetworkProcessor {
   // to be stored in this Map and reprocessed once the block comes
   private readonly awaitingGossipsubMessagesByRootBySlot: MapDef<Slot, MapDef<RootHex, Set<PendingGossipsubMessage>>>;
   private unknownBlockGossipsubMessagesCount = 0;
-  private isProcessingCurrentSlotBlock = false;
   private unknownRootsBySlot = new MapDef<Slot, Set<RootHex>>(() => new Set());
 
   constructor(
@@ -233,13 +230,13 @@ export class NetworkProcessor {
     return queue.getAll();
   }
 
-  searchUnknownSlotRoot({slot, root}: SlotRootHex, peer?: PeerIdStr): void {
+  searchUnknownSlotRoot({slot, root}: SlotRootHex, source: BlockInputSource, peer?: PeerIdStr): void {
     if (this.chain.seenBlock(root) || this.unknownRootsBySlot.getOrDefault(slot).has(root)) {
       return;
     }
     // Search for the unknown block
     this.unknownRootsBySlot.getOrDefault(slot).add(root);
-    this.events.emit(NetworkEvent.unknownBlock, {rootHex: root, peer});
+    this.chain.emitter.emit(ChainEvent.unknownBlockRoot, {rootHex: root, peer, source});
   }
 
   private onPendingGossipsubMessage(message: PendingGossipsubMessage): void {
@@ -247,14 +244,14 @@ export class NetworkProcessor {
     const extractBlockSlotRootFn = this.extractBlockSlotRootFns[topicType];
     // check block root of Attestation and SignedAggregateAndProof messages
     if (extractBlockSlotRootFn) {
-      const slotRoot = extractBlockSlotRootFn(message.msg.data, message.topic.fork);
+      const slotRoot = extractBlockSlotRootFn(message.msg.data, message.topic.boundary.fork);
       // if slotRoot is null, it means the msg.data is invalid
       // in that case message will be rejected when deserializing data in later phase (gossipValidatorFn)
       if (slotRoot) {
         // DOS protection: avoid processing messages that are too old
         const {slot, root} = slotRoot;
         const clockSlot = this.chain.clock.currentSlot;
-        const {fork} = message.topic;
+        const {fork} = message.topic.boundary;
         let earliestPermissableSlot = clockSlot - DEFAULT_EARLIEST_PERMISSIBLE_SLOT_DISTANCE;
         if (ForkSeq[fork] >= ForkSeq.deneb && topicType === GossipType.beacon_attestation) {
           // post deneb, the attestations could be in current or previous epoch
@@ -268,15 +265,11 @@ export class NetworkProcessor {
           });
           return;
         }
-        if (slot === clockSlot && (topicType === GossipType.beacon_block || topicType === GossipType.blob_sidecar)) {
-          // in the worse case if the current slot block is not valid, this will be reset in the next slot
-          this.isProcessingCurrentSlotBlock = true;
-        }
         message.msgSlot = slot;
         // check if we processed a block with this root
         // no need to check if root is a descendant of the current finalized block, it will be checked once we validate the message if needed
         if (root && !this.chain.forkChoice.hasBlockHexUnsafe(root)) {
-          this.searchUnknownSlotRoot({slot, root}, message.propagationSource.toString());
+          this.searchUnknownSlotRoot({slot, root}, BlockInputSource.gossip, message.propagationSource.toString());
 
           if (this.unknownBlockGossipsubMessagesCount > MAX_QUEUED_UNKNOWN_BLOCK_GOSSIP_OBJECTS) {
             // TODO: Should report the dropped job to gossip? It will be eventually pruned from the mcache
@@ -318,7 +311,6 @@ export class NetworkProcessor {
     block: string;
     executionOptimistic: boolean;
   }): Promise<void> {
-    this.isProcessingCurrentSlotBlock = false;
     const byRootGossipsubMessages = this.awaitingGossipsubMessagesByRootBySlot.getOrDefault(slot);
     const waitingGossipsubMessages = byRootGossipsubMessages.getOrDefault(rootHex);
     if (waitingGossipsubMessages.size === 0) {
@@ -345,7 +337,6 @@ export class NetworkProcessor {
   }
 
   private onClockSlot(clockSlot: Slot): void {
-    this.isProcessingCurrentSlotBlock = false;
     const nowSec = Date.now() / 1000;
     for (const [slot, gossipMessagesByRoot] of this.awaitingGossipsubMessagesByRootBySlot.entries()) {
       if (slot < clockSlot) {
@@ -492,10 +483,6 @@ export class NetworkProcessor {
    * Return null if chain can accept work, otherwise return the reason why it cannot accept work
    */
   private checkAcceptWork(): null | CannotAcceptWorkReason {
-    if (this.isProcessingCurrentSlotBlock) {
-      return CannotAcceptWorkReason.processingCurrentSlotBlock;
-    }
-
     if (!this.chain.blsThreadPoolCanAcceptWork()) {
       return CannotAcceptWorkReason.bls;
     }

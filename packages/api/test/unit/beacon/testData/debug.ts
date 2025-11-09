@@ -72,8 +72,15 @@ export const testData: GenericServerTestCases<Endpoints> = {
   getStateV2: {
     args: {stateId: "head"},
     res: {
-      data: ssz.altair.BeaconState.defaultValue(),
-      meta: {executionOptimistic: true, finalized: false, version: ForkName.altair},
+      data: ssz.electra.BeaconState.defaultValue(),
+      meta: {executionOptimistic: true, finalized: false, version: ForkName.electra},
+    },
+  },
+  getDebugDataColumnSidecars: {
+    args: {blockId: "head", indices: [0]},
+    res: {
+      data: [ssz.fulu.DataColumnSidecar.defaultValue()],
+      meta: {executionOptimistic: true, finalized: false, version: ForkName.fulu},
     },
   },
 };

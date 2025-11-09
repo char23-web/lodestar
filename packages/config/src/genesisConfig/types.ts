@@ -1,13 +1,14 @@
 import {ForkName} from "@lodestar/params";
 import {DomainType, ForkDigest, Root, Slot} from "@lodestar/types";
+import {ForkBoundary} from "../forkConfig/types.js";
 
 export type ForkDigestHex = string;
 
 export type ForkDigestContext = {
-  forkDigest2ForkName(forkDigest: ForkDigest | ForkDigestHex): ForkName;
-  forkDigest2ForkNameOption(forkDigest: ForkDigest | ForkDigestHex): ForkName | null;
-  forkName2ForkDigest(forkName: ForkName): ForkDigest;
-  forkName2ForkDigestHex(forkName: ForkName): ForkDigestHex;
+  forkDigest2ForkBoundary(forkDigest: ForkDigest | ForkDigestHex): ForkBoundary;
+  forkDigest2ForkBoundaryOption(forkDigest: ForkDigest | ForkDigestHex): ForkBoundary | null;
+  forkBoundary2ForkDigest(boundary: ForkBoundary): ForkDigest;
+  forkBoundary2ForkDigestHex(boundary: ForkBoundary): ForkDigestHex;
 };
 
 export interface CachedGenesis extends ForkDigestContext {
@@ -16,7 +17,7 @@ export interface CachedGenesis extends ForkDigestContext {
    *
    * Note: The configured fork schedule is always used rather than on-chain fork schedule.
    */
-  getDomain(stateSlot: Slot, domainType: DomainType, messageSlot?: Slot): Uint8Array;
+  getDomain(domainSlot: Slot, domainType: DomainType, messageSlot?: Slot): Uint8Array;
   /**
    * Return the signature domain corresponding to a particular fork version
    */

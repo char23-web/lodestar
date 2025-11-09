@@ -1,7 +1,7 @@
-import {fetch} from "@lodestar/api";
+import {describe, it} from "vitest";
 import {chainConfig} from "@lodestar/config/default";
 import {ForkName, activePreset} from "@lodestar/params";
-import {describe, it} from "vitest";
+import {fetch} from "@lodestar/utils";
 import {specConstants} from "../../../../src/api/impl/config/constants.js";
 import {ethereumConsensusSpecsTests} from "../../../spec/specTestVersioning.js";
 
@@ -35,7 +35,7 @@ describe("api / impl / config", () => {
 
     if (missingConstants.length > 0) {
       throw Error(
-        "Some constants delcared in consensus-specs repo are not exposed in API:\n" + missingConstants.join("\n")
+        "Some constants declared in consensus-specs repo are not exposed in API:\n" + missingConstants.join("\n")
       );
     }
   });
@@ -46,7 +46,7 @@ async function downloadRemoteConstants(commit: string): Promise<string[]> {
 
   for (const forkName of Object.values(ForkName)) {
     // If some future fork does not specify one of this docs, refactor to fetch some docs only on some forks
-    for (const docName of ["beacon-chain.md", "validator.md"]) {
+    for (const docName of ["beacon-chain.md", "validator.md", "p2p-interface.md"]) {
       downloadedSpecs.push(
         fetch(`https://raw.githubusercontent.com/ethereum/consensus-specs/${commit}/specs/${forkName}/${docName}`).then(
           (res) => res.text()

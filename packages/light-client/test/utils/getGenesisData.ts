@@ -1,14 +1,12 @@
 import {getClient} from "@lodestar/api";
 import {config} from "@lodestar/config/default";
-import {NetworkName} from "@lodestar/config/networks.js";
+import {NetworkName} from "@lodestar/config/networks";
 
 // To populate packages/light-client/src/networks.ts
 //
 // ```
 // INFURA_ETH2_CREDENTIALS=<user>:<secret> ./node_modules/.bin/ts-node test/getGenesisData.ts
 // ```
-
-/* eslint-disable no-console */
 
 const networksInInfura: NetworkName[] = ["mainnet" /*"goerli"*/];
 

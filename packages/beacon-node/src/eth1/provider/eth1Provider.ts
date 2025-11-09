@@ -1,14 +1,19 @@
 import {ChainConfig} from "@lodestar/config";
 import {Logger} from "@lodestar/logger";
 import {phase0} from "@lodestar/types";
-import {createElapsedTimeTracker, fromHex, isErrorAborted, toHex, toPrintableUrl} from "@lodestar/utils";
-
-import {FetchError, isFetchError} from "@lodestar/api";
+import {
+  FetchError,
+  createElapsedTimeTracker,
+  fromHex,
+  isErrorAborted,
+  isFetchError,
+  toHex,
+  toPrintableUrl,
+} from "@lodestar/utils";
 import {HTTP_CONNECTION_ERROR_CODES, HTTP_FATAL_ERROR_CODES} from "../../execution/engine/utils.js";
 import {isValidAddress} from "../../util/address.js";
 import {linspace} from "../../util/numpy.js";
-import {Eth1Block, Eth1ProviderState, IEth1Provider} from "../interface.js";
-import {EthJsonRpcBlockRaw} from "../interface.js";
+import {Eth1Block, Eth1ProviderState, EthJsonRpcBlockRaw, IEth1Provider} from "../interface.js";
 import {DEFAULT_PROVIDER_URLS, Eth1Options} from "../options.js";
 import {depositEventTopics, parseDepositLog} from "../utils/depositContract.js";
 import {
@@ -103,17 +108,15 @@ export class Eth1Provider implements IEth1Provider {
         this.state = Eth1ProviderState.AUTH_FAILED;
       }
 
-      if (this.state !== Eth1ProviderState.ONLINE) {
-        if (isOneMinutePassed()) {
-          this.logger?.error(
-            "Eth1 provider error",
-            {
-              state: this.state,
-              lastErrorAt: new Date(Date.now() - isOneMinutePassed.msSinceLastCall).toLocaleTimeString(),
-            },
-            error
-          );
-        }
+      if (this.state !== Eth1ProviderState.ONLINE && isOneMinutePassed()) {
+        this.logger?.error(
+          "Eth1 provider error",
+          {
+            state: this.state,
+            lastErrorAt: new Date(Date.now() - isOneMinutePassed.msSinceLastCall).toLocaleTimeString(),
+          },
+          error
+        );
       }
     });
   }

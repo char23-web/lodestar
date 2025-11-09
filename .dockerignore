@@ -26,6 +26,7 @@ prometheus.yml
 
 # Docker
 Dockerfile
+Dockerfile.dev
 docker-compose.yml
 
 # Tests
@@ -66,5 +67,6 @@ docs/site
 **/dist
 *.log
 **/*.log
+**/*.tsbuildinfo
 .idea
 .tmp

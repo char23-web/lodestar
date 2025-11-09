@@ -1,14 +1,12 @@
+import {expect} from "vitest";
 import {Node} from "@chainsafe/persistent-merkle-tree";
 import {CompositeType, Type, fromHexString, toHexString} from "@chainsafe/ssz";
-import {expect} from "vitest";
 
 type ValidTestCaseData = {
   root: string;
   serialized: string | Uint8Array;
   jsonValue: unknown;
 };
-
-/* eslint-disable no-console */
 
 export function runValidSszTest(type: Type<unknown>, testData: ValidTestCaseData): void {
   const testDataRootHex = testData.root;
@@ -81,13 +79,10 @@ export function runValidSszTest(type: Type<unknown>, testData: ValidTestCaseData
   // 0x0000000000000000000000000000000000000000000000000000000000000000
   if (process.env.RENDER_ROOTS) {
     if (type.isBasic) {
-      console.log("ROOTS Basic", toHexString(type.serialize(testDataValue)));
+      console.log("Chunk Basic", toHexString(type.serialize(testDataValue)));
     } else {
-      const roots = (type as CompositeType<unknown, unknown, unknown>)["getRoots"](testDataValue);
-      console.log(
-        "ROOTS Composite",
-        roots.map((root) => toHexString(root))
-      );
+      const blockBytes = (type as CompositeType<unknown, unknown, unknown>)["getBlocksBytes"](testDataValue);
+      console.log("chunkBytes Composite", toHexString(blockBytes));
     }
   }
 
@@ -103,7 +98,7 @@ export function runValidSszTest(type: Type<unknown>, testData: ValidTestCaseData
 
   // To print a tree a single test you are debugging do
   //
-  // $ RENDER_TREE=true ONLY_ID="4 arrays" ../../node_modules/.bin/vitest --run test/unit/byType/vector/valid.test.ts
+  // $ RENDER_TREE=true ONLY_ID="4 arrays" ../../node_modules/.bin/vitest run test/unit/byType/vector/valid.test.ts
   //
   // '1000' => '0x0000000000000000000000000000000000000000000000000000000000000000',
   // '1001' => '0x0000000000000000000000000000000000000000000000000000000000000000',

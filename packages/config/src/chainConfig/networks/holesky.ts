@@ -36,6 +36,12 @@ export const holeskyChainConfig: ChainConfig = {
   // Electra
   ELECTRA_FORK_VERSION: b("0x06017000"),
   ELECTRA_FORK_EPOCH: 115968,
+  // Fulu
+  FULU_FORK_VERSION: b("0x07017000"),
+  FULU_FORK_EPOCH: 165120,
+  // Gloas
+  GLOAS_FORK_VERSION: b("0x08017000"),
+  GLOAS_FORK_EPOCH: Infinity,
 
   // # 28,000,000,000 Gwei to ensure quicker ejection
   EJECTION_BALANCE: 28000000000,
@@ -45,4 +51,17 @@ export const holeskyChainConfig: ChainConfig = {
   DEPOSIT_CHAIN_ID: 17000,
   DEPOSIT_NETWORK_ID: 17000,
   DEPOSIT_CONTRACT_ADDRESS: b("0x4242424242424242424242424242424242424242"),
+
+  // Blob Scheduling
+  // ---------------------------------------------------------------
+  BLOB_SCHEDULE: [
+    {
+      EPOCH: 166400,
+      MAX_BLOBS_PER_BLOCK: 15,
+    },
+    {
+      EPOCH: 167936,
+      MAX_BLOBS_PER_BLOCK: 21,
+    },
+  ],
 };

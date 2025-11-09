@@ -1,5 +1,5 @@
-import {createChainForkConfig, defaultChainConfig} from "@lodestar/config";
 import {describe} from "vitest";
+import {createChainForkConfig, defaultChainConfig} from "@lodestar/config";
 import {getClient} from "../../../src/builder/client.js";
 import {Endpoints} from "../../../src/builder/routes.js";
 import {getRoutes} from "../../../src/builder/server/index.js";
@@ -8,12 +8,7 @@ import {testData} from "./testData.js";
 
 describe("builder", () => {
   runGenericServerTest<Endpoints>(
-    createChainForkConfig({
-      ...defaultChainConfig,
-      ALTAIR_FORK_EPOCH: 0,
-      BELLATRIX_FORK_EPOCH: 0,
-      DENEB_FORK_EPOCH: 0,
-    }),
+    createChainForkConfig({...defaultChainConfig, ELECTRA_FORK_EPOCH: 0}),
     getClient,
     getRoutes,
     testData

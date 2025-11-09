@@ -1,6 +1,6 @@
 import {
   CachedBeaconStateAllForks,
-  DataAvailableStatus,
+  DataAvailabilityStatus,
   ExecutionPayloadStatus,
   StateHashTreeRootSource,
   stateTransition,
@@ -11,7 +11,9 @@ import {byteArrayEquals} from "../../util/bytes.js";
 import {nextEventLoop} from "../../util/eventLoop.js";
 import {BlockError, BlockErrorCode} from "../errors/index.js";
 import {BlockProcessOpts} from "../options.js";
-import {BlockInput, ImportBlockOpts} from "./types.js";
+import {ValidatorMonitor} from "../validatorMonitor.js";
+import {IBlockInput} from "./blockInput/index.js";
+import {ImportBlockOpts} from "./types.js";
 
 /**
  * Verifies 1 or more blocks are fully valid running the full state transition; from a linear sequence of blocks.
@@ -23,10 +25,11 @@ import {BlockInput, ImportBlockOpts} from "./types.js";
  */
 export async function verifyBlocksStateTransitionOnly(
   preState0: CachedBeaconStateAllForks,
-  blocks: BlockInput[],
-  dataAvailabilityStatuses: DataAvailableStatus[],
+  blocks: IBlockInput[],
+  dataAvailabilityStatuses: DataAvailabilityStatus[],
   logger: Logger,
   metrics: Metrics | null,
+  validatorMonitor: ValidatorMonitor | null,
   signal: AbortSignal,
   opts: BlockProcessOpts & ImportBlockOpts
 ): Promise<{postStates: CachedBeaconStateAllForks[]; proposerBalanceDeltas: number[]; verifyStateTime: number}> {
@@ -36,9 +39,9 @@ export async function verifyBlocksStateTransitionOnly(
 
   for (let i = 0; i < blocks.length; i++) {
     const {validProposerSignature, validSignatures} = opts;
-    const {block} = blocks[i];
+    const block = blocks[i].getBlock();
     const preState = i === 0 ? preState0 : postStates[i - 1];
-    const dataAvailableStatus = dataAvailabilityStatuses[i];
+    const dataAvailabilityStatus = dataAvailabilityStatuses[i];
 
     // STFN - per_slot_processing() + per_block_processing()
     // NOTE: `regen.getPreState()` should have dialed forward the state already caching checkpoint states
@@ -50,14 +53,14 @@ export async function verifyBlocksStateTransitionOnly(
         // NOTE: Assume valid for now while sending payload to execution engine in parallel
         // Latter verifyBlocksInEpoch() will make sure that payload is indeed valid
         executionPayloadStatus: ExecutionPayloadStatus.valid,
-        dataAvailableStatus,
+        dataAvailabilityStatus,
         // false because it's verified below with better error typing
         verifyStateRoot: false,
         // if block is trusted don't verify proposer or op signature
         verifyProposer: !useBlsBatchVerify && !validSignatures && !validProposerSignature,
         verifySignatures: !useBlsBatchVerify && !validSignatures,
       },
-      metrics
+      {metrics, validatorMonitor}
     );
 
     const hashTreeRootTimer = metrics?.stateHashTreeRootTime.startTimer({
@@ -97,7 +100,7 @@ export async function verifyBlocksStateTransitionOnly(
 
   const verifyStateTime = Date.now();
   if (blocks.length === 1 && opts.seenTimestampSec !== undefined) {
-    const slot = blocks[0].block.message.slot;
+    const slot = blocks[0].getBlock().message.slot;
     const recvToValidation = verifyStateTime / 1000 - opts.seenTimestampSec;
     const validationTime = recvToValidation - recvToValLatency;
 

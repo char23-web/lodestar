@@ -1,16 +1,15 @@
-import fs from "node:fs";
-import path from "node:path";
 import worker from "node:worker_threads";
+import {privateKeyFromProtobuf} from "@libp2p/crypto/keys";
+import {peerIdFromPrivateKey} from "@libp2p/peer-id";
 import type {ModuleThread} from "@chainsafe/threads";
 import {expose} from "@chainsafe/threads/worker";
-import {createFromProtobuf} from "@libp2p/peer-id-factory";
 import {chainConfigFromJson, createBeaconConfig} from "@lodestar/config";
 import {getNodeLogger} from "@lodestar/logger/node";
 import {RegistryMetricCreator, collectNodeJSMetrics} from "../../metrics/index.js";
 import {AsyncIterableBridgeCaller, AsyncIterableBridgeHandler} from "../../util/asyncIterableToEvents.js";
 import {Clock} from "../../util/clock.js";
 import {peerIdToString} from "../../util/peerId.js";
-import {profileNodeJS, writeHeapSnapshot} from "../../util/profile.js";
+import {ProfileThread, profileThread, writeHeapSnapshot} from "../../util/profile.js";
 import {wireEventsOnWorkerThread} from "../../util/workerEvents.js";
 import {NetworkEventBus, NetworkEventData, networkEventDirection} from "../events.js";
 import {
@@ -32,7 +31,8 @@ if (!workerData) throw Error("workerData must be defined");
 if (!parentPort) throw Error("parentPort must be defined");
 
 const config = createBeaconConfig(chainConfigFromJson(workerData.chainConfigJson), workerData.genesisValidatorsRoot);
-const peerId = await createFromProtobuf(workerData.peerIdProto);
+const privateKey = privateKeyFromProtobuf(workerData.privateKeyProto);
+const peerId = peerIdFromPrivateKey(privateKey);
 
 // TODO: Pass options from main thread for logging
 // TODO: Logging won't be visible in file loggers
@@ -92,16 +92,22 @@ if (networkCoreWorkerMetrics) {
 const core = await NetworkCore.init({
   opts: workerData.opts,
   config,
-  peerId,
+  privateKey,
   peerStoreDir: workerData.peerStoreDir,
   logger,
   metricsRegistry: metricsRegister,
   events,
   clock,
-  getReqRespHandler: (method) => (req, peerId) =>
-    reqRespBridgeRespCaller.getAsyncIterable({method, req, peerId: peerIdToString(peerId)}),
+  getReqRespHandler: (method) => (req, peerId, peerClient) =>
+    reqRespBridgeRespCaller.getAsyncIterable({
+      method,
+      req,
+      peerId: peerIdToString(peerId),
+      peerClient,
+    }),
   activeValidatorCount: workerData.activeValidatorCount,
   initialStatus: workerData.initialStatus,
+  initialCustodyGroupCount: workerData.initialCustodyGroupCount,
 });
 
 wireEventsOnWorkerThread<NetworkEventData>(
@@ -138,6 +144,8 @@ const libp2pWorkerApi: NetworkWorkerApi = {
   // sendReqRespRequest - handled via events with AsyncIterableBridgeHandler
   publishGossip: (topic, data, opts) => core.publishGossip(topic, data, opts),
 
+  setTargetGroupCount: (count) => core.setTargetGroupCount(count),
+
   // Debug
 
   getNetworkIdentity: () => core.getNetworkIdentity(),
@@ -152,10 +160,7 @@ const libp2pWorkerApi: NetworkWorkerApi = {
   dumpDiscv5KadValues: () => core.dumpDiscv5KadValues(),
   dumpMeshPeers: () => core.dumpMeshPeers(),
   writeProfile: async (durationMs: number, dirpath: string) => {
-    const profile = await profileNodeJS(durationMs);
-    const filePath = path.join(dirpath, `network_thread_${new Date().toISOString()}.cpuprofile`);
-    fs.writeFileSync(filePath, profile);
-    return filePath;
+    return profileThread(ProfileThread.NETWORK, durationMs, dirpath);
   },
   writeDiscv5Profile: async (durationMs: number, dirpath: string) => {
     return core.writeDiscv5Profile(durationMs, dirpath);

@@ -1,6 +1,13 @@
 import {ChainForkConfig} from "@lodestar/config";
-import {ForkChoice, ForkChoiceOpts, IForkChoiceStore, ProtoArray, ProtoBlock} from "@lodestar/fork-choice";
-import {NotReorgedReason} from "@lodestar/fork-choice/lib/forkChoice/interface.js";
+import {
+  ForkChoice,
+  ForkChoiceOpts,
+  IForkChoiceStore,
+  NotReorgedReason,
+  ProtoArray,
+  ProtoBlock,
+  ProtoNode,
+} from "@lodestar/fork-choice";
 import {Slot} from "@lodestar/types";
 
 /**
@@ -29,9 +36,10 @@ export class ReorgedForkChoice extends ForkChoice {
     fcStore: IForkChoiceStore,
     /** The underlying representation of the block DAG. */
     protoArray: ProtoArray,
+    validatorCount: number,
     opts?: ForkChoiceOpts
   ) {
-    super(config, fcStore, protoArray, opts);
+    super(config, fcStore, protoArray, validatorCount, null, opts);
     this._fcStore = fcStore;
   }
 
@@ -72,7 +80,7 @@ export class ReorgedForkChoice extends ForkChoice {
     if (currentSlot > this.reorgedSlot + 1) {
       // from now on build on latest node which reorged at the given slot
       const nodes = super.getAllNodes();
-      return nodes[nodes.length - 1];
+      return nodes.at(-1) as ProtoBlock;
     }
 
     // importBlock flow at "this.reorgedSlot + 1" returns the old branch for oldHead computation which trigger reorg event
@@ -95,7 +103,7 @@ export class ReorgedForkChoice extends ForkChoice {
 
     // since reorgSlot, always return the latest node
     const nodes = super.getAllNodes();
-    const head = nodes[nodes.length - 1];
+    const head = nodes.at(-1) as ProtoNode;
     super.updateHead();
     return head;
   };

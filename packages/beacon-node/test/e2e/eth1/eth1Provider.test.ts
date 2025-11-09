@@ -1,11 +1,10 @@
-import {fromHexString} from "@chainsafe/ssz";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
+import {fromHexString} from "@chainsafe/ssz";
 import {Eth1Block} from "../../../src/eth1/interface.js";
 import {Eth1Options} from "../../../src/eth1/options.js";
 import {Eth1Provider, parseEth1Block} from "../../../src/eth1/provider/eth1Provider.js";
 import {getGoerliRpcUrl} from "../../testParams.js";
-import {getTestnetConfig} from "../../utils/testnet.js";
-import {goerliTestnetDepositEvents} from "../../utils/testnet.js";
+import {getTestnetConfig, goerliTestnetDepositEvents} from "../../utils/testnet.js";
 
 // https://github.com/ChainSafe/lodestar/issues/5967
 describe.skip("eth1 / Eth1Provider", () => {
@@ -76,7 +75,7 @@ describe.skip("eth1 / Eth1Provider", () => {
 
   it("getBlocksByNumber: Should fetch a block range", async () => {
     const fromBlock = firstGoerliBlocks[0].blockNumber;
-    const toBlock = firstGoerliBlocks[firstGoerliBlocks.length - 1].blockNumber;
+    const toBlock = firstGoerliBlocks.at(-1)?.blockNumber as number;
     const blocks = await getEth1Provider().getBlocksByNumber(fromBlock, toBlock);
     expect(blocks.map(parseEth1Block)).toEqual(firstGoerliBlocks);
   });

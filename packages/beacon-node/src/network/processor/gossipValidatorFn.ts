@@ -11,6 +11,7 @@ import {
   GossipValidatorBatchFn,
   GossipValidatorFn,
 } from "../gossip/interface.js";
+import {prettyPrintPeerIdStr} from "../util.ts";
 
 export type ValidatorFnModules = {
   config: ChainForkConfig;
@@ -29,9 +30,8 @@ export function getGossipValidatorBatchFn(
   const {logger, metrics} = modules;
 
   return async function gossipValidatorBatchFn(messageInfos: GossipMessageInfo[]) {
-    // all messageInfos have same topic
-    const {topic} = messageInfos[0];
-    const type = topic.type;
+    // all messageInfos have same topic type
+    const type = messageInfos[0].topic.type;
     try {
       const results = await (gossipHandlers[type] as BatchGossipHandlerFn)(
         messageInfos.map((messageInfo) => ({
@@ -40,19 +40,25 @@ export function getGossipValidatorBatchFn(
             msgSlot: messageInfo.msgSlot,
             indexed: messageInfo.indexed,
           },
-          topic,
+          topic: messageInfo.topic,
           peerIdStr: messageInfo.propagationSource,
           seenTimestampSec: messageInfo.seenTimestampSec,
         }))
       );
 
-      return results.map((e) => {
+      return results.map((e, i) => {
         if (e == null) {
           return TopicValidatorResult.Accept;
         }
 
+        const {clientAgent, clientVersion, propagationSource} = messageInfos[i];
+
         if (!(e instanceof AttestationError)) {
-          logger.debug(`Gossip batch validation ${type} threw a non-AttestationError`, {}, e as Error);
+          logger.debug(
+            `Gossip batch validation ${type} threw a non-AttestationError`,
+            {peerId: prettyPrintPeerIdStr(propagationSource), clientAgent, clientVersion},
+            e as Error
+          );
           metrics?.networkProcessor.gossipValidationIgnore.inc({topic: type});
           return TopicValidatorResult.Ignore;
         }
@@ -60,11 +66,18 @@ export function getGossipValidatorBatchFn(
         switch (e.action) {
           case GossipAction.IGNORE:
             metrics?.networkProcessor.gossipValidationIgnore.inc({topic: type});
+            // only beacon_attestation topic is validated in batch
+            metrics?.networkProcessor.gossipAttestationIgnoreByReason.inc({reason: e.type.code});
             return TopicValidatorResult.Ignore;
-
           case GossipAction.REJECT:
             metrics?.networkProcessor.gossipValidationReject.inc({topic: type});
-            logger.debug(`Gossip validation ${type} rejected`, {}, e);
+            // only beacon_attestation topic is validated in batch
+            metrics?.networkProcessor.gossipAttestationRejectByReason.inc({reason: e.type.code});
+            logger.debug(
+              `Gossip validation ${type} rejected`,
+              {peerId: prettyPrintPeerIdStr(propagationSource), clientAgent, clientVersion},
+              e
+            );
             return TopicValidatorResult.Reject;
         }
       });
@@ -97,7 +110,15 @@ export function getGossipValidatorBatchFn(
 export function getGossipValidatorFn(gossipHandlers: GossipHandlers, modules: ValidatorFnModules): GossipValidatorFn {
   const {logger, metrics} = modules;
 
-  return async function gossipValidatorFn({topic, msg, propagationSource, seenTimestampSec, msgSlot}) {
+  return async function gossipValidatorFn({
+    topic,
+    msg,
+    propagationSource,
+    clientAgent,
+    clientVersion,
+    seenTimestampSec,
+    msgSlot,
+  }) {
     const type = topic.type;
 
     try {
@@ -114,7 +135,11 @@ export function getGossipValidatorFn(gossipHandlers: GossipHandlers, modules: Va
     } catch (e) {
       if (!(e instanceof GossipActionError)) {
         // not deserve to log error here, it looks too dangerous to users
-        logger.debug(`Gossip validation ${type} threw a non-GossipActionError`, {}, e as Error);
+        logger.debug(
+          `Gossip validation ${type} threw a non-GossipActionError`,
+          {peerId: prettyPrintPeerIdStr(propagationSource), clientAgent, clientVersion},
+          e as Error
+        );
         return TopicValidatorResult.Ignore;
       }
 
@@ -132,7 +157,11 @@ export function getGossipValidatorFn(gossipHandlers: GossipHandlers, modules: Va
 
         case GossipAction.REJECT:
           metrics?.networkProcessor.gossipValidationReject.inc({topic: type});
-          logger.debug(`Gossip validation ${type} rejected`, {}, e);
+          logger.debug(
+            `Gossip validation ${type} rejected`,
+            {peerId: prettyPrintPeerIdStr(propagationSource), clientAgent, clientVersion},
+            e
+          );
           return TopicValidatorResult.Reject;
       }
     }

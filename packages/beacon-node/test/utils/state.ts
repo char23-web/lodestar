@@ -2,6 +2,7 @@ import {SecretKey} from "@chainsafe/blst";
 import {PubkeyIndexMap} from "@chainsafe/pubkey-index-map";
 import {ChainForkConfig, createBeaconConfig} from "@lodestar/config";
 import {config as minimalConfig} from "@lodestar/config/default";
+import {ExecutionStatus, ProtoBlock} from "@lodestar/fork-choice";
 import {FAR_FUTURE_EPOCH, ForkName, ForkSeq, MAX_EFFECTIVE_BALANCE, SYNC_COMMITTEE_SIZE} from "@lodestar/params";
 import {
   BeaconStateAllForks,
@@ -10,11 +11,10 @@ import {
   CachedBeaconStateAllForks,
   CachedBeaconStateBellatrix,
   CachedBeaconStateElectra,
+  DataAvailabilityStatus,
   createCachedBeaconState,
 } from "@lodestar/state-transition";
 import {BeaconState, altair, bellatrix, electra, ssz} from "@lodestar/types";
-
-import {DataAvailabilityStatus, ExecutionStatus, ProtoBlock} from "@lodestar/fork-choice";
 import {ZERO_HASH_HEX} from "../../src/constants/constants.js";
 import {getConfig} from "./config.js";
 import {generateValidator, generateValidators} from "./validator.js";
@@ -150,8 +150,8 @@ export function generateCachedBellatrixState(opts?: TestBeaconState): CachedBeac
 /**
  * This generates state with default pubkey
  */
-export function generateCachedElectraState(opts?: TestBeaconState): CachedBeaconStateElectra {
-  const config = getConfig(ForkName.electra);
+export function generateCachedElectraState(opts?: TestBeaconState, electraForkEpoch = 0): CachedBeaconStateElectra {
+  const config = getConfig(ForkName.electra, electraForkEpoch);
   const state = generateState(opts, config);
   return createCachedBeaconState(state as BeaconStateElectra, {
     config: createBeaconConfig(config, state.genesisValidatorsRoot),

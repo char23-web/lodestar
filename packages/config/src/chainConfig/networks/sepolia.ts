@@ -36,10 +36,29 @@ export const sepoliaChainConfig: ChainConfig = {
   // Electra
   ELECTRA_FORK_VERSION: b("0x90000074"),
   ELECTRA_FORK_EPOCH: 222464,
+  // Fulu
+  FULU_FORK_VERSION: b("0x90000075"),
+  FULU_FORK_EPOCH: 272640,
+  // Gloas
+  GLOAS_FORK_VERSION: b("0x90000076"),
+  GLOAS_FORK_EPOCH: Infinity,
 
   // Deposit contract
   // ---------------------------------------------------------------
   DEPOSIT_CHAIN_ID: 11155111,
   DEPOSIT_NETWORK_ID: 11155111,
   DEPOSIT_CONTRACT_ADDRESS: b("0x7f02C3E3c98b133055B8B348B2Ac625669Ed295D"),
+
+  // Blob Scheduling
+  // ---------------------------------------------------------------
+  BLOB_SCHEDULE: [
+    {
+      EPOCH: 274176,
+      MAX_BLOBS_PER_BLOCK: 15,
+    },
+    {
+      EPOCH: 275712,
+      MAX_BLOBS_PER_BLOCK: 21,
+    },
+  ],
 };

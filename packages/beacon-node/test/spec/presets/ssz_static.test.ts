@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import {expect, it, vi} from "vitest";
 import {Type} from "@chainsafe/ssz";
 import {ACTIVE_PRESET, ForkName} from "@lodestar/params";
 import {ssz, sszTypesFor} from "@lodestar/types";
-import {expect, it, vi} from "vitest";
 import {ethereumConsensusSpecsTests} from "../specTestVersioning.js";
 import {replaceUintTypeWithUintBigintType} from "../utils/replaceUintTypeWithUintBigintType.js";
 import {runValidSszTest} from "../utils/runValidSszTest.js";
@@ -42,9 +42,10 @@ const sszStatic =
       return;
     }
 
-    /* eslint-disable @typescript-eslint/strict-boolean-expressions */
     const sszType =
       (sszTypesFor(fork) as Types)[typeName] ||
+      (ssz.gloas as Types)[typeName] ||
+      (ssz.fulu as Types)[typeName] ||
       (ssz.electra as Types)[typeName] ||
       (ssz.deneb as Types)[typeName] ||
       (ssz.capella as Types)[typeName] ||
@@ -80,7 +81,7 @@ const sszStatic =
 specTestIterator(path.join(ethereumConsensusSpecsTests.outputDir, "tests", ACTIVE_PRESET), {
   ssz_static: {
     type: RunnerType.custom,
-    // starting from v1.4.0-beta.6, there is "whisk" fork in ssz_static tests but we ignore them
-    fn: sszStatic("whisk"),
+    // starting from v1.5.0-beta.3, there is "eip7441" fork in ssz_static tests but we ignore them
+    fn: sszStatic("eip7441"),
   },
 });

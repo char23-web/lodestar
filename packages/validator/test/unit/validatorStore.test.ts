@@ -1,13 +1,11 @@
+import {toBufferBE} from "bigint-buffer";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {SecretKey} from "@chainsafe/blst";
 import {fromHexString, toHexString} from "@chainsafe/ssz";
 import {routes} from "@lodestar/api";
 import {chainConfig} from "@lodestar/config/default";
 import {bellatrix} from "@lodestar/types";
-import {toBufferBE} from "bigint-buffer";
-import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
-
-import {ValidatorStore} from "../../src/services/validatorStore.js";
-import {ValidatorProposerConfig} from "../../src/services/validatorStore.js";
+import {ValidatorProposerConfig, ValidatorStore} from "../../src/services/validatorStore.js";
 import {getApiClientStub} from "../utils/apiStub.js";
 import {initValidatorStore} from "../utils/validatorStore.js";
 
@@ -26,7 +24,7 @@ describe("ValidatorStore", () => {
           strictFeeRecipientCheck: true,
           feeRecipient: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           builder: {
-            gasLimit: 36000000,
+            gasLimit: 45000000,
             selection: routes.validator.BuilderSelection.ExecutionOnly,
           },
         },
@@ -80,6 +78,7 @@ describe("ValidatorStore", () => {
       [valRegF10G200, "0x10", 200],
     ];
     for (const [valReg, feeRecipient, gasLimit] of testCases) {
+      vi.clearAllMocks();
       vi.spyOn(validatorStore, "signValidatorRegistration").mockResolvedValue(valReg);
 
       const val1 = await validatorStore.getValidatorRegistration(pubkeys[0], {feeRecipient, gasLimit}, slot++);

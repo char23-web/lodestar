@@ -41,13 +41,33 @@ export type ChainConfig = {
   // ELECTRA
   ELECTRA_FORK_VERSION: Uint8Array;
   ELECTRA_FORK_EPOCH: number;
+  // FULU
+  FULU_FORK_VERSION: Uint8Array;
+  FULU_FORK_EPOCH: number;
+  // GLOAS
+  GLOAS_FORK_VERSION: Uint8Array;
+  GLOAS_FORK_EPOCH: number;
 
   // Time parameters
+  /** @deprecated Use `SLOT_DURATION_MS` instead. */
   SECONDS_PER_SLOT: number;
+  SLOT_DURATION_MS: number;
   SECONDS_PER_ETH1_BLOCK: number;
   MIN_VALIDATOR_WITHDRAWABILITY_DELAY: number;
   SHARD_COMMITTEE_PERIOD: number;
   ETH1_FOLLOW_DISTANCE: number;
+  PROPOSER_REORG_CUTOFF_BPS: number;
+  ATTESTATION_DUE_BPS: number;
+  AGGREGATE_DUE_BPS: number;
+  // Altair
+  SYNC_MESSAGE_DUE_BPS: number;
+  CONTRIBUTION_DUE_BPS: number;
+
+  ATTESTATION_DUE_BPS_GLOAS: number;
+  AGGREGATE_DUE_BPS_GLOAS: number;
+  SYNC_MESSAGE_DUE_BPS_GLOAS: number;
+  CONTRIBUTION_DUE_BPS_GLOAS: number;
+  PAYLOAD_ATTESTATION_DUE_BPS: number;
 
   // Validator cycle
   INACTIVITY_SCORE_BIAS: number;
@@ -71,14 +91,39 @@ export type ChainConfig = {
   DEPOSIT_CONTRACT_ADDRESS: Uint8Array;
 
   // Networking
+  MAX_PAYLOAD_SIZE: number;
+  MAX_REQUEST_BLOCKS: number;
+  EPOCHS_PER_SUBNET_SUBSCRIPTION: number;
   MIN_EPOCHS_FOR_BLOCK_REQUESTS: number;
+  ATTESTATION_PROPAGATION_SLOT_RANGE: number;
+  MAXIMUM_GOSSIP_CLOCK_DISPARITY: number;
+  MESSAGE_DOMAIN_INVALID_SNAPPY: Uint8Array;
+  MESSAGE_DOMAIN_VALID_SNAPPY: Uint8Array;
+  SUBNETS_PER_NODE: number;
+  MAX_REQUEST_BLOCKS_DENEB: number;
   MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS: number;
+  MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS: number;
   BLOB_SIDECAR_SUBNET_COUNT: number;
   MAX_BLOBS_PER_BLOCK: number;
   MAX_REQUEST_BLOB_SIDECARS: number;
   BLOB_SIDECAR_SUBNET_COUNT_ELECTRA: number;
+  DATA_COLUMN_SIDECAR_SUBNET_COUNT: number;
   MAX_BLOBS_PER_BLOCK_ELECTRA: number;
   MAX_REQUEST_BLOB_SIDECARS_ELECTRA: number;
+  MAX_REQUEST_DATA_COLUMN_SIDECARS: number;
+
+  // Fulu
+  NUMBER_OF_CUSTODY_GROUPS: number;
+  SAMPLES_PER_SLOT: number;
+  CUSTODY_REQUIREMENT: number;
+  VALIDATOR_CUSTODY_REQUIREMENT: number;
+  BALANCE_PER_ADDITIONAL_CUSTODY_GROUP: number;
+
+  // Gloas
+  MAX_REQUEST_PAYLOADS: number;
+
+  // Blob Scheduling
+  BLOB_SCHEDULE: BlobSchedule;
 };
 
 export const chainConfigTypes: SpecTypes<ChainConfig> = {
@@ -112,13 +157,32 @@ export const chainConfigTypes: SpecTypes<ChainConfig> = {
   // ELECTRA
   ELECTRA_FORK_VERSION: "bytes",
   ELECTRA_FORK_EPOCH: "number",
+  // FULU
+  FULU_FORK_VERSION: "bytes",
+  FULU_FORK_EPOCH: "number",
+  // GLOAS
+  GLOAS_FORK_VERSION: "bytes",
+  GLOAS_FORK_EPOCH: "number",
 
   // Time parameters
   SECONDS_PER_SLOT: "number",
+  SLOT_DURATION_MS: "number",
   SECONDS_PER_ETH1_BLOCK: "number",
   MIN_VALIDATOR_WITHDRAWABILITY_DELAY: "number",
   SHARD_COMMITTEE_PERIOD: "number",
   ETH1_FOLLOW_DISTANCE: "number",
+  PROPOSER_REORG_CUTOFF_BPS: "number",
+  ATTESTATION_DUE_BPS: "number",
+  AGGREGATE_DUE_BPS: "number",
+  // Altair
+  SYNC_MESSAGE_DUE_BPS: "number",
+  CONTRIBUTION_DUE_BPS: "number",
+
+  ATTESTATION_DUE_BPS_GLOAS: "number",
+  AGGREGATE_DUE_BPS_GLOAS: "number",
+  SYNC_MESSAGE_DUE_BPS_GLOAS: "number",
+  CONTRIBUTION_DUE_BPS_GLOAS: "number",
+  PAYLOAD_ATTESTATION_DUE_BPS: "number",
 
   // Validator cycle
   INACTIVITY_SCORE_BIAS: "number",
@@ -142,18 +206,63 @@ export const chainConfigTypes: SpecTypes<ChainConfig> = {
   DEPOSIT_CONTRACT_ADDRESS: "bytes",
 
   // Networking
+  MAX_PAYLOAD_SIZE: "number",
+  MAX_REQUEST_BLOCKS: "number",
+  EPOCHS_PER_SUBNET_SUBSCRIPTION: "number",
   MIN_EPOCHS_FOR_BLOCK_REQUESTS: "number",
+  ATTESTATION_PROPAGATION_SLOT_RANGE: "number",
+  MAXIMUM_GOSSIP_CLOCK_DISPARITY: "number",
+  MESSAGE_DOMAIN_INVALID_SNAPPY: "bytes",
+  MESSAGE_DOMAIN_VALID_SNAPPY: "bytes",
+  SUBNETS_PER_NODE: "number",
+  MAX_REQUEST_BLOCKS_DENEB: "number",
   MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS: "number",
+  MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS: "number",
   BLOB_SIDECAR_SUBNET_COUNT: "number",
+  DATA_COLUMN_SIDECAR_SUBNET_COUNT: "number",
   MAX_BLOBS_PER_BLOCK: "number",
   MAX_REQUEST_BLOB_SIDECARS: "number",
   BLOB_SIDECAR_SUBNET_COUNT_ELECTRA: "number",
   MAX_BLOBS_PER_BLOCK_ELECTRA: "number",
   MAX_REQUEST_BLOB_SIDECARS_ELECTRA: "number",
+  MAX_REQUEST_DATA_COLUMN_SIDECARS: "number",
+
+  // Fulu
+  NUMBER_OF_CUSTODY_GROUPS: "number",
+  SAMPLES_PER_SLOT: "number",
+  CUSTODY_REQUIREMENT: "number",
+  VALIDATOR_CUSTODY_REQUIREMENT: "number",
+  BALANCE_PER_ADDITIONAL_CUSTODY_GROUP: "number",
+
+  // Gloas
+  MAX_REQUEST_PAYLOADS: "number",
+
+  // Blob Scheduling
+  BLOB_SCHEDULE: "blob_schedule",
 };
 
+export type BlobScheduleEntry = {
+  EPOCH: number;
+  MAX_BLOBS_PER_BLOCK: number;
+};
+
+export type BlobSchedule = BlobScheduleEntry[];
+
+export function isBlobSchedule(value: unknown): value is BlobSchedule {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof entry.EPOCH === "number" &&
+        typeof entry.MAX_BLOBS_PER_BLOCK === "number"
+    )
+  );
+}
+
 /** Allows values in a Spec file */
-export type SpecValue = number | bigint | Uint8Array | string;
+export type SpecValue = number | bigint | Uint8Array | string | BlobSchedule;
 
 /** Type value name of each spec field. Numbers are ignored since they are the most common */
 export type SpecValueType<V extends SpecValue> = V extends number
@@ -164,7 +273,9 @@ export type SpecValueType<V extends SpecValue> = V extends number
       ? "bytes"
       : V extends string
         ? "string"
-        : never;
+        : V extends BlobSchedule
+          ? "blob_schedule"
+          : never;
 
 /** All possible type names for a SpecValue */
 export type SpecValueTypeName = SpecValueType<SpecValue>;
@@ -172,3 +283,5 @@ export type SpecValueTypeName = SpecValueType<SpecValue>;
 export type SpecTypes<Spec extends Record<string, SpecValue>> = {
   [K in keyof Spec]: SpecValueType<Spec[K]>;
 };
+
+export type SpecJson = Record<string, string | Record<string, string>[]>;

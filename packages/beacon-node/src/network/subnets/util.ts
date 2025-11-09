@@ -1,11 +1,6 @@
 import {digest} from "@chainsafe/as-sha256";
-import {
-  ATTESTATION_SUBNET_PREFIX_BITS,
-  EPOCHS_PER_SUBNET_SUBSCRIPTION,
-  NODE_ID_BITS,
-  SUBNETS_PER_NODE,
-} from "@lodestar/params";
-import {ATTESTATION_SUBNET_COUNT} from "@lodestar/params";
+import {ChainConfig} from "@lodestar/config";
+import {ATTESTATION_SUBNET_COUNT, ATTESTATION_SUBNET_PREFIX_BITS, NODE_ID_BITS} from "@lodestar/params";
 import {computeShuffledIndex} from "@lodestar/state-transition";
 import {Epoch, ssz} from "@lodestar/types";
 import {NodeId} from "./interface.js";
@@ -13,10 +8,10 @@ import {NodeId} from "./interface.js";
 /**
  * Spec https://github.com/ethereum/consensus-specs/blob/v1.4.0-alpha.3/specs/phase0/p2p-interface.md
  */
-export function computeSubscribedSubnet(nodeId: NodeId, epoch: Epoch): number[] {
+export function computeSubscribedSubnet(config: ChainConfig, nodeId: NodeId, epoch: Epoch): number[] {
   const subnets: number[] = [];
-  for (let index = 0; index < SUBNETS_PER_NODE; index++) {
-    subnets.push(computeSubscribedSubnetByIndex(nodeId, epoch, index));
+  for (let index = 0; index < config.SUBNETS_PER_NODE; index++) {
+    subnets.push(computeSubscribedSubnetByIndex(config, nodeId, epoch, index));
   }
   return subnets;
 }
@@ -24,11 +19,16 @@ export function computeSubscribedSubnet(nodeId: NodeId, epoch: Epoch): number[] 
 /**
  * Spec https://github.com/ethereum/consensus-specs/blob/v1.4.0-alpha.3/specs/phase0/p2p-interface.md
  */
-export function computeSubscribedSubnetByIndex(nodeId: NodeId, epoch: Epoch, index: number): number {
+export function computeSubscribedSubnetByIndex(
+  config: ChainConfig,
+  nodeId: NodeId,
+  epoch: Epoch,
+  index: number
+): number {
   const nodeIdPrefix = getNodeIdPrefix(nodeId);
   const nodeOffset = getNodeOffset(nodeId);
   const permutationSeed = digest(
-    ssz.UintNum64.serialize(Math.floor((epoch + nodeOffset) / EPOCHS_PER_SUBNET_SUBSCRIPTION))
+    ssz.UintNum64.serialize(Math.floor((epoch + nodeOffset) / config.EPOCHS_PER_SUBNET_SUBSCRIPTION))
   );
   const permutatedPrefix = computeShuffledIndex(nodeIdPrefix, 1 << ATTESTATION_SUBNET_PREFIX_BITS, permutationSeed);
   return (permutatedPrefix + index) % ATTESTATION_SUBNET_COUNT;
@@ -56,5 +56,8 @@ export function getNodeIdPrefix(nodeId: NodeId): number {
 export function getNodeOffset(nodeId: NodeId): number {
   // Big endian means that the least significant byte comes last
   // The n % 256 is equivalent to the last byte of the node_id
-  return nodeId[nodeId.length - 1];
+  const lastByte = nodeId.at(-1);
+  if (lastByte === undefined) throw new Error("Can not get node offset");
+
+  return lastByte;
 }

@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import stream from "node:stream";
-import {promisify} from "node:util";
-import got from "got";
+import {Readable} from "node:stream";
+import stream from "node:stream/promises";
+import {ReadableStream as NodeReadableStream} from "node:stream/web";
 import yaml from "js-yaml";
+import {fetch} from "@lodestar/utils";
+
 const {load, dump, FAILSAFE_SCHEMA, Type} = yaml;
 
 import {mkdir} from "./fs.js";
@@ -128,7 +130,16 @@ export async function downloadOrCopyFile(pathDest: string, urlOrPathSrc: string)
 export async function downloadFile(pathDest: string, url: string): Promise<void> {
   if (!fs.existsSync(pathDest)) {
     mkdir(path.dirname(pathDest));
-    await promisify(stream.pipeline)(got.stream(url), fs.createWriteStream(pathDest));
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to download file from ${url}: ${res.status} ${res.statusText}`);
+    }
+
+    if (!res.body) {
+      throw new Error("Response body is null");
+    }
+
+    await stream.pipeline(Readable.fromWeb(res.body as unknown as NodeReadableStream), fs.createWriteStream(pathDest));
   }
 }
 
@@ -138,8 +149,15 @@ export async function downloadFile(pathDest: string, url: string): Promise<void>
  */
 export async function downloadOrLoadFile(pathOrUrl: string): Promise<Uint8Array> {
   if (isUrl(pathOrUrl)) {
-    const res = await got.get(pathOrUrl, {encoding: "binary"});
-    return res.rawBody;
+    const res = await fetch(pathOrUrl, {
+      // Ensure we only receive SSZ responses if REST API is queried
+      headers: {accept: "application/octet-stream"},
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to download file from ${pathOrUrl}: ${res.status} ${res.statusText}`);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
   }
   return fs.promises.readFile(pathOrUrl);
 }

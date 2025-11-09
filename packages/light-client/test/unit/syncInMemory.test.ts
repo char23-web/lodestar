@@ -1,9 +1,9 @@
+import {beforeAll, describe, expect, it, vi} from "vitest";
 import bls from "@chainsafe/bls";
 import {createBeaconConfig} from "@lodestar/config";
 import {chainConfig} from "@lodestar/config/default";
 import {EPOCHS_PER_SYNC_COMMITTEE_PERIOD, SLOTS_PER_EPOCH} from "@lodestar/params";
 import {SyncPeriod, altair, ssz} from "@lodestar/types";
-import {beforeAll, describe, expect, it, vi} from "vitest";
 import {LightClientStoreFast} from "../../src/types.js";
 import {BeaconChainLcMock} from "../mocks/BeaconChainLcMock.js";
 import {processLightClientUpdate} from "../utils/naive/update.js";
@@ -24,7 +24,7 @@ function getSyncCommittee(
 
 describe("syncInMemory", () => {
   // In browser test this process is taking more time than default 2000ms
-  vi.setConfig({testTimeout: 10000});
+  vi.setConfig({testTimeout: 20000, hookTimeout: 20000});
 
   // Fixed params
   const genValiRoot = Buffer.alloc(32, 9);

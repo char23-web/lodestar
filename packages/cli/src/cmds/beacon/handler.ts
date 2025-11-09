@@ -1,14 +1,14 @@
 import path from "node:path";
 import {getHeapStatistics} from "node:v8";
+import {SignableENR} from "@chainsafe/enr";
 import {hasher} from "@chainsafe/persistent-merkle-tree";
 import {BeaconDb, BeaconNode} from "@lodestar/beacon-node";
 import {ChainForkConfig, createBeaconConfig} from "@lodestar/config";
-import {LevelDbController} from "@lodestar/db";
+import {LevelDbController} from "@lodestar/db/controller/level";
 import {LoggerNode, getNodeLogger} from "@lodestar/logger/node";
 import {ACTIVE_PRESET, PresetName} from "@lodestar/params";
-import {ErrorAborted} from "@lodestar/utils";
+import {ErrorAborted, bytesToInt, formatBytes} from "@lodestar/utils";
 import {ProcessShutdownCallback} from "@lodestar/validator";
-
 import {BeaconNodeOptions, getBeaconConfigFromArgs} from "../../config/index.js";
 import {getNetworkBootnodes, getNetworkData, isKnownNetworkName, readBootnodes} from "../../networks/index.js";
 import {GlobalArgs, parseBeaconNodeArgs} from "../../options/index.js";
@@ -23,7 +23,7 @@ import {
 } from "../../util/index.js";
 import {getVersionData} from "../../util/version.js";
 import {initBeaconState} from "./initBeaconState.js";
-import {initPeerIdAndEnr} from "./initPeerIdAndEnr.js";
+import {initPrivateKeyAndEnr} from "./initPeerIdAndEnr.js";
 import {BeaconArgs} from "./options.js";
 import {getBeaconPaths} from "./paths.js";
 
@@ -35,16 +35,16 @@ const EIGHT_GB = 8 * 1024 * 1024 * 1024;
  * Runs a beacon node.
  */
 export async function beaconHandler(args: BeaconArgs & GlobalArgs): Promise<void> {
-  const {config, options, beaconPaths, network, version, commit, peerId, logger} = await beaconHandlerInit(args);
+  const {config, options, beaconPaths, network, version, commit, privateKey, logger} = await beaconHandlerInit(args);
 
-  if (hasher.name !== "as-sha256") {
-    throw Error(`Loaded incorrect hasher ${hasher.name}, expected as-sha256`);
+  if (hasher.name !== "hashtree") {
+    logger.warn(`hashtree is not supported, using hasher ${hasher.name}`);
   }
 
   const heapSizeLimit = getHeapStatistics().heap_size_limit;
   if (heapSizeLimit < EIGHT_GB) {
     logger.warn(
-      `Node.js heap size limit is too low, consider increasing it to at least ${EIGHT_GB}. See https://chainsafe.github.io/lodestar/faqs/#running-a-beacon-node for more details.`
+      `Node.js heap size limit is too low at ${formatBytes(heapSizeLimit)}, consider increasing it to at least ${formatBytes(EIGHT_GB)}. See https://chainsafe.github.io/lodestar/faqs/#running-a-beacon-node for more details.`
     );
   }
 
@@ -70,9 +70,10 @@ export async function beaconHandler(args: BeaconArgs & GlobalArgs): Promise<void
 
   // BeaconNode setup
   try {
-    const {anchorState, wsCheckpoint} = await initBeaconState(
+    const {anchorState, isFinalized, wsCheckpoint} = await initBeaconState(
       options,
       args,
+      beaconPaths.dataDir,
       config,
       db,
       logger,
@@ -85,9 +86,11 @@ export async function beaconHandler(args: BeaconArgs & GlobalArgs): Promise<void
       db,
       logger,
       processShutdownCallback,
-      peerId,
+      privateKey,
+      dataDir: beaconPaths.dataDir,
       peerStoreDir: beaconPaths.peerStoreDir,
       anchorState,
+      isAnchorStateFinalized: isFinalized,
       wsCheckpoint,
     });
 
@@ -142,7 +145,9 @@ export async function beaconHandler(args: BeaconArgs & GlobalArgs): Promise<void
           // See https://github.com/ChainSafe/lodestar/issues/5642
           process.exit(0);
         } catch (e) {
-          logger.error("Error closing beacon node", {}, e as Error);
+          // If we start from unfinalized state, we don't have checkpoint state so there is this error
+          // "No state in cache for finalized checkpoint state epoch"
+          logger.warn("Error closing beacon node", {}, e as Error);
           // Make sure db is always closed gracefully
           await db.close();
           // Must explicitly exit process due to potential active handles
@@ -172,10 +177,15 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
   const beaconPaths = getBeaconPaths(args, network);
   // TODO: Rename db.name to db.path or db.location
   beaconNodeOptions.set({db: {name: beaconPaths.dbDir}});
-  beaconNodeOptions.set({chain: {persistInvalidSszObjectsDir: beaconPaths.persistInvalidSszObjectsDir}});
+  beaconNodeOptions.set({
+    chain: {
+      validatorMonitorLogs: args.validatorMonitorLogs,
+      persistInvalidSszObjectsDir: beaconPaths.persistInvalidSszObjectsDir,
+      persistOrphanedBlocksDir: beaconPaths.persistOrphanedBlocksDir,
+    },
+  });
   // Add metrics metadata to show versioning + network info in Prometheus + Grafana
   beaconNodeOptions.set({metrics: {metadata: {version, commit, network}}});
-  beaconNodeOptions.set({metrics: {validatorMonitorLogs: args.validatorMonitorLogs}});
   // Add detailed version string for API node/version endpoint
   beaconNodeOptions.set({api: {commit, version}});
 
@@ -186,7 +196,7 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
   }
 
   const logger = initLogger(args, beaconPaths.dataDir, config);
-  const {peerId, enr} = await initPeerIdAndEnr(args, beaconPaths.beaconDir, logger);
+  const {privateKey, enr} = await initPrivateKeyAndEnr(args, beaconPaths.beaconDir, logger);
 
   if (args.discv5 !== false) {
     // Inject ENR to beacon options
@@ -201,6 +211,8 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
     beaconNodeOptions.set({network: {discv5: {bootEnrs: [...new Set(bootnodes)]}}});
   }
 
+  beaconNodeOptions.set({chain: {initialCustodyGroupCount: getInitialCustodyGroupCount(args, config, logger, enr)}});
+
   if (args.disableLightClientServer) {
     beaconNodeOptions.set({chain: {disableLightClientServer: true}});
   }
@@ -209,9 +221,8 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
     beaconNodeOptions.set({network: {private: true}, api: {private: true}});
   } else {
     const versionStr = `Lodestar/${version}`;
-    const simpleVersionStr = version.split("/")[0];
-    // Add simple version string for libp2p agent version
-    beaconNodeOptions.set({network: {version: simpleVersionStr}});
+    // Add version string for libp2p agent version
+    beaconNodeOptions.set({network: {version}});
     // Add User-Agent header to all builder requests
     beaconNodeOptions.set({executionBuilder: {userAgent: versionStr}});
     // Set jwt version with version string
@@ -223,7 +234,7 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
   // Render final options
   const options = beaconNodeOptions.getWithDefaults();
 
-  return {config, options, beaconPaths, network, version, commit, peerId, logger};
+  return {config, options, beaconPaths, network, version, commit, privateKey, logger};
 }
 
 export function initLogger(
@@ -241,4 +252,30 @@ export function initLogger(
   }
 
   return logger;
+}
+
+function getInitialCustodyGroupCount(
+  args: BeaconArgs & GlobalArgs,
+  config: ChainForkConfig,
+  logger: LoggerNode,
+  enr: SignableENR
+): number {
+  if (args.supernode) {
+    return config.NUMBER_OF_CUSTODY_GROUPS;
+  }
+
+  const enrCgcBytes = enr.kvs.get("cgc");
+  const enrCgc = enrCgcBytes != null ? bytesToInt(enrCgcBytes, "be") : 0;
+
+  if (args.semiSupernode) {
+    const semiSupernodeCgc = Math.floor(config.NUMBER_OF_CUSTODY_GROUPS / 2);
+    if (enrCgc > semiSupernodeCgc) {
+      logger.warn(
+        `Reducing custody requirements is not supported, will continue to use custody group count of ${enrCgc}`
+      );
+    }
+    return Math.max(enrCgc, semiSupernodeCgc);
+  }
+
+  return Math.max(enrCgc, config.CUSTODY_REQUIREMENT);
 }

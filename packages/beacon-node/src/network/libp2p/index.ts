@@ -1,15 +1,15 @@
-import {ENR} from "@chainsafe/enr";
-// TODO: We should use this fork until https://github.com/libp2p/js-libp2p/pull/2387
-import {identify} from "@chainsafe/libp2p-identify";
-import {noise} from "@chainsafe/libp2p-noise";
 import {bootstrap} from "@libp2p/bootstrap";
-import {PeerId} from "@libp2p/interface";
+import {identify} from "@libp2p/identify";
+import {PrivateKey} from "@libp2p/interface";
 import {mdns} from "@libp2p/mdns";
 import {mplex} from "@libp2p/mplex";
 import {prometheusMetrics} from "@libp2p/prometheus-metrics";
 import {tcp} from "@libp2p/tcp";
 import {createLibp2p} from "libp2p";
 import {Registry} from "prom-client";
+import {ENR} from "@chainsafe/enr";
+import {noise} from "@chainsafe/libp2p-noise";
+import {asCrypto, defaultCrypto} from "@chainsafe/libp2p-noise/crypto";
 import {Libp2p, LodestarComponents} from "../interface.js";
 import {NetworkOptions, defaultNetworkOptions} from "../options.js";
 import {Eth2PeerDataStore} from "../peers/datastore.js";
@@ -34,7 +34,7 @@ export async function getDiscv5Multiaddrs(bootEnrs: string[]): Promise<string[]>
 }
 
 export async function createNodeJsLibp2p(
-  peerId: PeerId,
+  privateKey: PrivateKey,
   networkOpts: Partial<NetworkOptions> = {},
   nodeJsLibp2pOpts: NodeJsLibp2pOpts = {}
 ): Promise<Libp2p> {
@@ -64,13 +64,21 @@ export async function createNodeJsLibp2p(
     }
   }
 
+  const noiseCrypto = {
+    ...defaultCrypto,
+  };
+  if (globalThis.Bun) {
+    noiseCrypto.chaCha20Poly1305Decrypt = asCrypto.chaCha20Poly1305Decrypt;
+    noiseCrypto.chaCha20Poly1305Encrypt = asCrypto.chaCha20Poly1305Encrypt;
+  }
+
   return createLibp2p({
-    peerId,
+    privateKey,
     addresses: {
       listen: localMultiaddrs,
       announce: [],
     },
-    connectionEncryption: [noise()],
+    connectionEncrypters: [noise({crypto: noiseCrypto})],
     // Reject connections when the server's connection count gets high
     transports: [
       tcp({
@@ -85,7 +93,7 @@ export async function createNodeJsLibp2p(
         },
       }),
     ],
-    streamMuxers: [mplex({maxInboundStreams: 256})],
+    streamMuxers: [mplex({maxInboundStreams: 256, disconnectThreshold: networkOpts.disconnectThreshold})],
     peerDiscovery,
     metrics: nodeJsLibp2pOpts.metrics
       ? prometheusMetrics({
@@ -99,14 +107,19 @@ export async function createNodeJsLibp2p(
       maxParallelDials: 100,
       maxPeerAddrsToDial: 4,
       dialTimeout: 30_000,
-
-      // Rely entirely on lodestar's peer manager to prune connections
-      //maxConnections: options.maxConnections,
-      // DOCS: There is no way to turn off autodial other than setting minConnections to 0
-      minConnections: 0,
       // the maximum number of pending connections libp2p will accept before it starts rejecting incoming connections.
       // make it the same to backlog option above
       maxIncomingPendingConnections: 5,
+    },
+    // rely on lodestar's peer manager to ping peers
+    connectionMonitor: {
+      enabled: false,
+    },
+    // for our purposes, we don't want peer store data to expire
+    // see https://github.com/libp2p/js-libp2p/pull/3019
+    peerStore: {
+      maxAddressAge: Infinity,
+      maxPeerAge: Infinity,
     },
     datastore,
     services: {
@@ -118,6 +131,7 @@ export async function createNodeJsLibp2p(
       // and passing it here directly causes problems downstream, not to mention is slowwww
       components: (components: LodestarComponents) => ({
         peerId: components.peerId,
+        privateKey: components.privateKey,
         nodeInfo: components.nodeInfo,
         logger: components.logger,
         events: components.events,

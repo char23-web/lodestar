@@ -1,18 +1,18 @@
-import fs from "node:fs";
-import path from "node:path";
 import worker from "node:worker_threads";
-import {Discv5} from "@chainsafe/discv5";
-import {ENR, ENRData, SignableENR, SignableENRData, createPrivateKeyFromPeerId} from "@chainsafe/enr";
+import {privateKeyFromProtobuf} from "@libp2p/crypto/keys";
+import {peerIdFromPrivateKey} from "@libp2p/peer-id";
+import {Multiaddr, multiaddr} from "@multiformats/multiaddr";
+import {Discv5, Discv5EventEmitter} from "@chainsafe/discv5";
+import {ENR, ENRData, SignableENR, SignableENRData} from "@chainsafe/enr";
 import {Observable, Subject} from "@chainsafe/threads/observable";
 import {expose} from "@chainsafe/threads/worker";
-import {createFromProtobuf} from "@libp2p/peer-id-factory";
 import {createBeaconConfig} from "@lodestar/config";
 import {getNodeLogger} from "@lodestar/logger/node";
 import {Gauge} from "@lodestar/utils";
-import {Multiaddr, multiaddr} from "@multiformats/multiaddr";
 import {RegistryMetricCreator} from "../../metrics/index.js";
 import {collectNodeJSMetrics} from "../../metrics/nodeJsMetrics.js";
-import {profileNodeJS, writeHeapSnapshot} from "../../util/profile.js";
+import {Clock} from "../../util/clock.js";
+import {ProfileThread, profileThread, writeHeapSnapshot} from "../../util/profile.js";
 import {Discv5WorkerApi, Discv5WorkerData} from "./types.js";
 import {ENRRelevance, enrRelevance} from "./utils.js";
 
@@ -42,22 +42,22 @@ if (workerData.metrics) {
   });
 }
 
-const peerId = await createFromProtobuf(workerData.peerIdProto);
-const keypair = createPrivateKeyFromPeerId(peerId);
+const privateKey = privateKeyFromProtobuf(workerData.privateKeyProto);
+const peerId = peerIdFromPrivateKey(privateKey);
 
 const config = createBeaconConfig(workerData.chainConfig, workerData.genesisValidatorsRoot);
 
 // Initialize discv5
 const discv5 = Discv5.create({
-  enr: SignableENR.decodeTxt(workerData.enr, keypair.privateKey),
-  peerId,
+  enr: SignableENR.decodeTxt(workerData.enr, privateKey.raw),
+  privateKey,
   bindAddrs: {
     ip4: (workerData.bindAddrs.ip4 ? multiaddr(workerData.bindAddrs.ip4) : undefined) as Multiaddr,
     ip6: workerData.bindAddrs.ip6 ? multiaddr(workerData.bindAddrs.ip6) : undefined,
   },
   config: workerData.config,
   metricsRegistry,
-});
+}) as Discv5 & Discv5EventEmitter;
 
 // Load boot enrs
 for (const bootEnr of workerData.bootEnrs) {
@@ -67,8 +67,12 @@ for (const bootEnr of workerData.bootEnrs) {
 /** Used to push discovered ENRs */
 const subject = new Subject<ENRData>();
 
+/** Define a new clock */
+const abortController = new AbortController();
+const clock = new Clock({config, genesisTime: workerData.genesisTime, signal: abortController.signal});
+
 const onDiscovered = (enr: ENR): void => {
-  const status = enrRelevance(enr, config);
+  const status = enrRelevance(enr, config, clock);
   enrRelevanceMetric?.inc({status});
   if (status === ENRRelevance.relevant) {
     subject.next(enr.toObject());
@@ -87,13 +91,13 @@ const module: Discv5WorkerApi = {
     discv5.enr.set(key, value);
   },
   async kadValues(): Promise<ENRData[]> {
-    return discv5.kadValues().map((enr) => enr.toObject());
+    return discv5.kadValues().map((enr: ENR) => enr.toObject());
   },
   async discoverKadValues(): Promise<void> {
     discv5.kadValues().map(onDiscovered);
   },
   async findRandomNode(): Promise<ENRData[]> {
-    return (await discv5.findRandomNode()).map((enr) => enr.toObject());
+    return (await discv5.findRandomNode()).map((enr: ENR) => enr.toObject());
   },
   discovered() {
     return Observable.from(subject);
@@ -102,10 +106,7 @@ const module: Discv5WorkerApi = {
     return (await metricsRegistry?.metrics()) ?? "";
   },
   writeProfile: async (durationMs: number, dirpath: string) => {
-    const profile = await profileNodeJS(durationMs);
-    const filePath = path.join(dirpath, `discv5_thread_${new Date().toISOString()}.cpuprofile`);
-    fs.writeFileSync(filePath, profile);
-    return filePath;
+    return profileThread(ProfileThread.DISC5, durationMs, dirpath);
   },
   writeHeapSnapshot: async (prefix: string, dirpath: string) => {
     return writeHeapSnapshot(prefix, dirpath);

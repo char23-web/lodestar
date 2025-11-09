@@ -1,9 +1,9 @@
+import {Mock, Mocked, vi} from "vitest";
 import {PubkeyIndexMap} from "@chainsafe/pubkey-index-map";
 import {ChainForkConfig} from "@lodestar/config";
 import {config as defaultConfig} from "@lodestar/config/default";
 import {EpochDifference, ForkChoice, ProtoBlock} from "@lodestar/fork-choice";
 import {Logger} from "@lodestar/utils";
-import {Mock, Mocked, vi} from "vitest";
 import {BeaconProposerCache} from "../../src/chain/beaconProposerCache.js";
 import {BeaconChain} from "../../src/chain/chain.js";
 import {ChainEventEmitter} from "../../src/chain/emitter.js";
@@ -20,7 +20,6 @@ import {getMockedLogger} from "./loggerMock.js";
 
 export type MockedBeaconChain = Mocked<BeaconChain> & {
   logger: Mocked<Logger>;
-  getHeadState: Mock;
   forkChoice: MockedForkChoice;
   executionEngine: Mocked<ExecutionEngineHttp>;
   executionBuilder: Mocked<ExecutionBuilderHttp>;
@@ -43,7 +42,7 @@ export type MockedBeaconChain = Mocked<BeaconChain> & {
 vi.mock("@lodestar/fork-choice", async (importActual) => {
   const mod = await importActual<typeof import("@lodestar/fork-choice")>();
 
-  const ForkChoice = vi.fn().mockImplementation(() => {
+  const ForkChoice = vi.fn().mockImplementation(function MockedForkChoice() {
     return {
       updateTime: vi.fn(),
       getJustifiedBlock: vi.fn(),
@@ -55,6 +54,7 @@ vi.mock("@lodestar/fork-choice", async (importActual) => {
       getBlock: vi.fn(),
       getAllAncestorBlocks: vi.fn(),
       getAllNonAncestorBlocks: vi.fn(),
+      getAllAncestorAndNonAncestorBlocks: vi.fn(),
       iterateAncestorBlocks: vi.fn(),
       getBlockSummariesByParentRoot: vi.fn(),
       getCanonicalBlockAtSlot: vi.fn(),
@@ -79,7 +79,7 @@ vi.mock("../../src/chain/lightClient/index.js");
 vi.mock("../../src/chain/opPools/index.js", async (importActual) => {
   const mod = await importActual<typeof import("../../src/chain/opPools/index.js")>();
 
-  const OpPool = vi.fn().mockImplementation(() => {
+  const OpPool = vi.fn().mockImplementation(function MockedOpPool() {
     return {
       hasSeenBlsToExecutionChange: vi.fn(),
       hasSeenVoluntaryExit: vi.fn(),
@@ -89,13 +89,13 @@ vi.mock("../../src/chain/opPools/index.js", async (importActual) => {
     };
   });
 
-  const AggregatedAttestationPool = vi.fn().mockImplementation(() => {
+  const AggregatedAttestationPool = vi.fn().mockImplementation(function MockedAggregatedAttestationPool() {
     return {
       getAttestationsForBlock: vi.fn(),
     };
   });
 
-  const SyncContributionAndProofPool = vi.fn().mockImplementation(() => {
+  const SyncContributionAndProofPool = vi.fn().mockImplementation(function MockedSyncContributionAndProofPool() {
     return {
       getAggregate: vi.fn(),
     };
@@ -112,15 +112,20 @@ vi.mock("../../src/chain/opPools/index.js", async (importActual) => {
 vi.mock("../../src/chain/chain.js", async (importActual) => {
   const mod = await importActual<typeof import("../../src/chain/chain.js")>();
 
-  const BeaconChain = vi.fn().mockImplementation(({clock, genesisTime, config}: MockedBeaconChainOptions) => {
+  const BeaconChain = vi.fn().mockImplementation(function MockedBeaconChain({
+    clock: clockParam,
+    genesisTime,
+    config,
+  }: MockedBeaconChainOptions) {
     const logger = getMockedLogger();
+    const clock =
+      clockParam === "real" ? new Clock({config, genesisTime, signal: new AbortController().signal}) : getMockedClock();
 
     return {
       config,
       opts: {},
       genesisTime,
-      clock:
-        clock === "real" ? new Clock({config, genesisTime, signal: new AbortController().signal}) : getMockedClock(),
+      clock,
       forkChoice: getMockedForkChoice(),
       executionEngine: {
         notifyForkchoiceUpdate: vi.fn(),
@@ -132,7 +137,7 @@ vi.mock("../../src/chain/chain.js", async (importActual) => {
       eth1: new Eth1ForBlockProduction(),
       opPool: new OpPool(),
       aggregatedAttestationPool: new AggregatedAttestationPool(config),
-      syncContributionAndProofPool: new SyncContributionAndProofPool(),
+      syncContributionAndProofPool: new SyncContributionAndProofPool(config, clock),
       // @ts-expect-error
       beaconProposerCache: new BeaconProposerCache(),
       shufflingCache: new ShufflingCache(),
@@ -191,7 +196,7 @@ export type MockedForkChoice = Mocked<ForkChoice>;
 
 export function getMockedForkChoice(): MockedForkChoice {
   // ForkChoice package is mocked globally
-  return vi.mocked(new ForkChoice({} as any, {} as any, {} as any, {} as any));
+  return vi.mocked(new ForkChoice({} as any, {} as any, {} as any, {} as any, {} as any));
 }
 
 // To avoid loading the package in test while mocked, exporting frequently used types and constants

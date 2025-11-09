@@ -1,9 +1,8 @@
 import {ForkSeq, MIN_ATTESTATION_INCLUSION_DELAY, SLOTS_PER_EPOCH} from "@lodestar/params";
 import {Attestation, Slot, electra, phase0, ssz} from "@lodestar/types";
-import {toRootHex} from "@lodestar/utils";
-import {assert} from "@lodestar/utils";
+import {assert, toRootHex} from "@lodestar/utils";
 import {CachedBeaconStateAllForks, CachedBeaconStatePhase0} from "../types.js";
-import {computeEpochAtSlot} from "../util/index.js";
+import {computeEndSlotAtEpoch, computeEpochAtSlot} from "../util/index.js";
 import {isValidIndexedAttestation} from "./index.js";
 
 /**
@@ -78,9 +77,11 @@ export function validateAttestation(fork: ForkSeq, state: CachedBeaconStateAllFo
 
   // post deneb, the attestations are valid till end of next epoch
   if (!(data.slot + MIN_ATTESTATION_INCLUSION_DELAY <= slot && isTimelyTarget(fork, slot - data.slot))) {
+    const windowStart = data.slot + MIN_ATTESTATION_INCLUSION_DELAY;
+    const windowEnd = fork >= ForkSeq.deneb ? computeEndSlotAtEpoch(computedEpoch + 1) : data.slot + SLOTS_PER_EPOCH;
+
     throw new Error(
-      "Attestation slot not within inclusion window: " +
-        `slot=${data.slot} window=${data.slot + MIN_ATTESTATION_INCLUSION_DELAY}..${data.slot + SLOTS_PER_EPOCH}`
+      `Attestation slot not within inclusion window: slot=${data.slot} window=${windowStart}..${windowEnd}`
     );
   }
 
@@ -89,11 +90,11 @@ export function validateAttestation(fork: ForkSeq, state: CachedBeaconStateAllFo
     const attestationElectra = attestation as electra.Attestation;
     const committeeIndices = attestationElectra.committeeBits.getTrueBitIndexes();
 
-    if (committeeIndices.length === 0) {
+    const lastCommitteeIndex = committeeIndices.at(-1);
+    if (lastCommitteeIndex === undefined) {
       throw Error("Attestation should have at least one committee bit set");
     }
 
-    const lastCommitteeIndex = committeeIndices[committeeIndices.length - 1];
     if (lastCommitteeIndex >= committeeCount) {
       throw new Error(
         `Attestation committee index exceeds committee count: lastCommitteeIndex=${lastCommitteeIndex} numCommittees=${committeeCount}`
