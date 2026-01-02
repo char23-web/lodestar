@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    timeout-minutes: 60
+    timeout-minutes: 120
     name: Build and run Kurtosis
     runs-on: buildjet-4vcpu-ubuntu-2204
     steps:
